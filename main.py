@@ -1,5 +1,3 @@
-"""Neuroevolução de uma política simples para o Atari Carnival."""
-
 from __future__ import annotations
 
 import argparse
@@ -8,15 +6,15 @@ import csv
 import random
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import ale_py
 import gymnasium as gym
 import numpy as np
 
 
-# O Carnival-v5 do ALE expõe seis ações nativas: NOOP, FIRE, RIGHT, LEFT, RIGHTFIRE, LEFTFIRE.
 ENV_ID = "ALE/Carnival-v5"
-NUM_ENTRADAS = 128  # RAM do Atari
+NUM_ENTRADAS = 128
 NUM_OCULTOS = 16
 NUM_ACOES = 6
 TAMANHO_POPULACAO = 20
@@ -41,7 +39,6 @@ EXPERIMENTOS = {
 
 
 def criar_ambiente(render_mode: str | None = None):
-    """Cria Carnival com RAM e limite para truncar episódios excessivos."""
     return gym.make(
         ENV_ID,
         obs_type="ram",
@@ -51,7 +48,6 @@ def criar_ambiente(render_mode: str | None = None):
 
 
 class Agente:
-    """Indivíduo cujo DNA é formado pelos pesos e biases da rede."""
 
     def __init__(self) -> None:
         self.W1 = np.random.randn(NUM_ENTRADAS, NUM_OCULTOS)
@@ -141,7 +137,6 @@ def avaliar_em_seeds(agente: Agente, numero_episodios: int, seed: int) -> list[f
     try:
         return [avaliar(agente, seed=seed + episodio) for episodio in range(numero_episodios)]
     finally:
-        # A validação não deve sobrescrever o fitness que definiu o melhor no treino.
         agente.fitness = fitness_treino
 
 
@@ -150,13 +145,11 @@ def criar_populacao() -> list[Agente]:
 
 
 def selecionar(populacao: list[Agente]) -> list[Agente]:
-    """Seleção por ranking: os 25% com maior fitness são candidatos a pais."""
     quantidade_pais = max(2, TAMANHO_POPULACAO // 4)
     return sorted(populacao, key=lambda agente: agente.fitness, reverse=True)[:quantidade_pais]
 
 
 def mutar(agente: Agente, configuracao: ConfiguracaoExperimento) -> None:
-    """Cada parâmetro tem a taxa configurada de chance de receber ruído gaussiano."""
     for nome in ("W1", "b1", "W2", "b2"):
         parametros = getattr(agente, nome)
         mascara = np.random.random(parametros.shape) < configuracao.taxa_mutacao
@@ -169,7 +162,6 @@ def nova_geracao(
 ) -> list[Agente]:
     pais = selecionar(populacao)
     ordenados = sorted(populacao, key=lambda agente: agente.fitness, reverse=True)
-    # Elitismo: cópias independentes dos dois melhores sem mutação.
     proxima = [copy.deepcopy(agente) for agente in ordenados[:NUM_ELITE]]
     while len(proxima) < TAMANHO_POPULACAO:
         filho = copy.deepcopy(random.choice(pais))
@@ -189,8 +181,6 @@ def executar_experimento(
 
     for indice_geracao in range(NUM_GERACOES):
         for indice, agente in enumerate(populacao):
-            # Cada indivíduo é comparado em um episódio próprio. Seeds fixas
-            # tornam a execução reproduzível, sem reutilizar a mesma seed.
             agente.fitness = avaliar(
                 agente, seed=seed + indice_geracao * TAMANHO_POPULACAO + indice
             )
@@ -201,7 +191,6 @@ def executar_experimento(
             melhor_global = copy.deepcopy(melhor_da_geracao)
         registro: dict[str, float | int | str] = {
             "experimento": configuracao.nome,
-            # Numeração 1-based: a geração 1 é a primeira população avaliada.
             "geracao": indice_geracao + 1,
             "melhor": max(valores),
             "media": float(np.mean(valores)),
@@ -253,10 +242,8 @@ def salvar_grafico(historicos: list[dict[str, float | int | str]]) -> Path:
     PASTA_RESULTADOS.mkdir(parents=True, exist_ok=True)
     destino = PASTA_RESULTADOS / "fitness.png"
     try:
-        import matplotlib.pyplot as plt
+        import matplotlib.pyplot as plt  # type: ignore
     except ImportError:
-        # Fallback sem dependências: PNG RGB com os gráficos de melhor e média.
-        # A instalação normal usa Matplotlib para incluir títulos, eixos e legenda.
         _salvar_grafico_png_basico(historicos, destino)
         return destino
 
@@ -276,7 +263,7 @@ def salvar_grafico(historicos: list[dict[str, float | int | str]]) -> Path:
         eixo.legend()
     fig.suptitle("Neuroevolução no Atari Carnival")
     fig.tight_layout()
-    fig.savefig(destino, dpi=150)
+    fig.savefig(str(destino), dpi=150)
     plt.close(fig)
     return destino
 
@@ -284,7 +271,6 @@ def salvar_grafico(historicos: list[dict[str, float | int | str]]) -> Path:
 def _salvar_grafico_png_basico(
     historicos: list[dict[str, float | int | str]], destino: Path
 ) -> None:
-    """Fallback PNG identificado: dois painéis e legenda para A, B e C."""
     import struct
     import zlib
 
@@ -359,7 +345,7 @@ def _salvar_grafico_png_basico(
                 y = base - round((float(item[campo])-minimo) * (base-topo) / (maximo-minimo))
                 pontos.append((x,y))
             for inicio, fim in zip(pontos, pontos[1:]):
-                linha(*inicio, *fim, cor)
+                linha(inicio[0], inicio[1], fim[0], fim[1], cor)
         texto(esquerda + 170, 445, "GENERATION", (20,20,20))
 
     x_legenda = 390
@@ -382,7 +368,6 @@ def _salvar_grafico_png_basico(
 
 
 def executar_melhor(agente: Agente) -> float:
-    """Demonstra uma partida do melhor agente em uma janela."""
     env = criar_ambiente(render_mode="human")
     try:
         estado, _info = env.reset()
@@ -398,7 +383,9 @@ def executar_melhor(agente: Agente) -> float:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Neuroevolução no Carnival: evolução de redes neurais no ambiente ALE/Carnival-v5."
+    )
     parser.add_argument(
         "--experimento",
         choices=["A", "B", "C", "todos"],
@@ -438,9 +425,10 @@ def main() -> None:
 
     with criar_ambiente() as env:
         print(f"Ambiente: {ENV_ID} | ações: {env.action_space} | observação RAM: {env.observation_space.shape}")
-        if env.action_space.n != NUM_ACOES:
+        numero_acoes = cast(gym.spaces.Discrete, env.action_space).n
+        if numero_acoes != NUM_ACOES:
             raise RuntimeError(
-                f"Esperadas 6 ações do Carnival-v5; o ambiente apresentou {env.action_space.n}."
+                f"Esperadas 6 ações do Carnival-v5; o ambiente apresentou {numero_acoes}."
             )
 
     seed_validacao = args.seed + 1_000_000
@@ -451,7 +439,6 @@ def main() -> None:
     historicos: list[dict[str, float | int | str]] = []
     melhores: list[tuple[str, Agente]] = []
     for codigo in codigos:
-        # Semente comum facilita atribuir diferenças à configuração de mutação.
         historico, melhor = executar_experimento(EXPERIMENTOS[codigo], args.seed)
         historicos.extend(historico)
         melhores.append((codigo, melhor))
@@ -467,8 +454,6 @@ def main() -> None:
             f"episódios: {validacoes[codigo]}"
         )
 
-    # Define o melhor pela fitness evolutiva de treino; a validação fica reservada
-    # para comparação com o baseline e não escolhe o vencedor após observar os dados.
     melhor_codigo, melhor_agente = max(melhores, key=lambda item: item[1].fitness)
     melhor_media = float(np.mean(validacoes[melhor_codigo]))
     salvar_agente(melhor_agente, PASTA_RESULTADOS / "melhor_agente.npz", melhor_codigo)
